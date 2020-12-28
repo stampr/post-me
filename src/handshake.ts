@@ -7,9 +7,16 @@ import {
   createResponsMessage,
   isResponseMessage,
   Message,
-  HandshakeMessage,
 } from './message';
-import { isWindow } from './worker';
+import { createLogger } from './logger';
+import {
+  makeWindowPostMessage,
+  makeWebWorkerAddMessageListener,
+  makeWebWorkerPostMessage,
+  makeWindowAddMessageListener,
+  runUntil,
+  isWindow,
+} from './handshake.utils';
 
 const uniqueSessionId: () => IdType = (() => {
   let __sessionId = 0;
@@ -22,89 +29,23 @@ const uniqueSessionId: () => IdType = (() => {
 
 export const HANDSHAKE_SUCCESS = '@post-me/handshake-success';
 
-const makeWindowPostMessage = (w: Window, origin: string) => {
-  return (message: Message<any>) => {
-    w.postMessage(message, origin);
-  };
-};
-
-const makeWorkerPostMessage = (w: Worker | DedicatedWorkerGlobalScope) => {
-  return (message: Message<any>) => {
-    w.postMessage(message);
-  };
-};
-
-const makeWindowAddMessageListener = (w: Window, acceptedOrigin: string) => {
-  const acceptEvent = (event: MessageEvent) => {
-    const { origin } = event;
-
-    if (origin !== acceptedOrigin && acceptedOrigin !== '*') {
-      return false;
-    }
-
-    return true;
-  };
-  return (listener: (event: MessageEvent) => void) => {
-    const outerListener = (event: MessageEvent) => {
-      if (acceptEvent(event)) {
-        listener(event);
-      }
-    };
-
-    w.addEventListener('message', outerListener);
-
-    const removeListener = () => {
-      w.removeEventListener('message', outerListener);
-    };
-
-    return removeListener;
-  };
-};
-
-const makeWorkerAddMessageListener = (w: Worker | WorkerGlobalScope) => {
-  const acceptEvent = (_event: MessageEvent) => {
-    return true;
-  };
-  return (listener: (message: MessageEvent) => void) => {
-    const outerListener = (event: any) => {
-      if (acceptEvent(event)) {
-        listener(event);
-      }
-    };
-
-    w.addEventListener('message', outerListener);
-
-    const removeListener = () => {
-      w.removeEventListener('message', outerListener);
-    };
-
-    return removeListener;
-  };
-};
-
-const runUntil = (
-  worker: () => void,
-  condition: () => boolean,
-  attemptInterval = 50
-): void => {
-  const fn = () => {
-    worker();
-    if (!condition()) {
-      setTimeout(fn, attemptInterval);
-    }
-  };
-  fn();
-};
-
 export function ParentHandshake<M0 extends MethodsType>(
   localMethods: M0,
   otherWindow: Window | Worker,
   acceptedOrigin: string,
   _thisWindow?: Window | DedicatedWorkerGlobalScope
 ): Promise<Connection> {
+  const logger = createLogger('PARENT');
+  logger('starting', {
+    localMethods,
+    otherWindow,
+    acceptedOrigin,
+    _thisWindow,
+  });
   const thisWindow = _thisWindow || window;
 
   const thisSessionId = uniqueSessionId();
+  logger('session', thisSessionId);
 
   return new Promise<ConcreteConnection<M0>>((resolve, reject) => {
     let postMessage: ((message: Message<any>) => void) | undefined;
@@ -113,20 +54,35 @@ export function ParentHandshake<M0 extends MethodsType>(
       | undefined;
 
     if (isWindow(otherWindow)) {
-      postMessage = makeWindowPostMessage(otherWindow, acceptedOrigin);
+      logger('postMessage; otherWindow = Window');
+      postMessage = makeWindowPostMessage(
+        logger.child('makeWindowPostMessage'),
+        otherWindow,
+        acceptedOrigin
+      );
     } else {
-      postMessage = makeWorkerPostMessage(otherWindow);
+      logger('postMessage; otherWindow = unknown (web worker?)');
+      postMessage = makeWebWorkerPostMessage(
+        logger.child('makeWebWorkerPostMessage'),
+        otherWindow
+      );
     }
 
     if (isWindow(thisWindow) && isWindow(otherWindow)) {
+      logger('addMessageListener; window listener');
       addMessageListener = makeWindowAddMessageListener(
+        logger,
         thisWindow,
         acceptedOrigin
       );
     }
 
     if (isWindow(thisWindow) && !isWindow(otherWindow)) {
-      addMessageListener = makeWorkerAddMessageListener(otherWindow);
+      logger('addMessageListener; web worker listener');
+      addMessageListener = makeWebWorkerAddMessageListener(
+        logger.child('makeWebWorkerAddMessageListener'),
+        otherWindow
+      );
     }
 
     if (postMessage === undefined || addMessageListener === undefined) {
@@ -139,17 +95,21 @@ export function ParentHandshake<M0 extends MethodsType>(
 
     const handshakeListener = (event: MessageEvent) => {
       const { data } = event;
+      logger('listener received event', { event });
 
       if (isResponseMessage(data)) {
         const { sessionId, requestId, result } = data;
+        logger('listener isResponseMessage', { sessionId, requestId, result });
 
         if (
           sessionId === thisSessionId &&
           requestId === thisSessionId &&
           result === HANDSHAKE_SUCCESS
         ) {
+          logger('we are the recipipent');
           connected = true;
           removeHandshakeListener();
+          logger('finalizing Connection');
           resolve(
             new ConcreteConnection(
               localMethods,
@@ -167,6 +127,7 @@ export function ParentHandshake<M0 extends MethodsType>(
     removeHandshakeListener = addMessageListener(handshakeListener);
 
     runUntil(
+      logger.child('runUntil'),
       () => {
         const message = createHandshakeMessage(thisSessionId);
         (postMessage as any)(message);
@@ -181,6 +142,8 @@ export function ChildHandshake<M0 extends MethodsType>(
   acceptedOrigin: string,
   _thisWindow?: Window | DedicatedWorkerGlobalScope
 ): Promise<Connection> {
+  const logger = createLogger('CHILD');
+  logger('starting', { localMethods, acceptedOrigin, _thisWindow });
   const thisWindow = _thisWindow || window;
 
   return new Promise<ConcreteConnection<M0>>((resolve, reject) => {
@@ -190,12 +153,18 @@ export function ChildHandshake<M0 extends MethodsType>(
       | undefined;
 
     if (isWindow(thisWindow)) {
+      logger('addMessageListener; thisWindow = Window');
       addMessageListener = makeWindowAddMessageListener(
+        logger.child('makeWindowAddMessageListener'),
         thisWindow,
         acceptedOrigin
       );
     } else {
-      addMessageListener = makeWorkerAddMessageListener(thisWindow);
+      logger('addMessageListener; thisWindow = unknown (web worker?)');
+      addMessageListener = makeWebWorkerAddMessageListener(
+        logger.child('makeWebWorkerAddMessageListener'),
+        thisWindow
+      );
     }
 
     if (addMessageListener === undefined) {
@@ -208,15 +177,26 @@ export function ChildHandshake<M0 extends MethodsType>(
 
     const handshakeListener = (event: MessageEvent) => {
       const { source, data } = event;
+      logger('listener received event', { event });
 
       if (isHandshakeMessage(data)) {
+        logger('handshake message detected');
         connected = true;
         removeHandshakeListener();
 
         if (source && isWindow(source)) {
-          postMessage = makeWindowPostMessage(source as any, acceptedOrigin);
+          logger('source is window');
+          postMessage = makeWindowPostMessage(
+            logger.child('makeWindowPostMessage'),
+            source as any,
+            acceptedOrigin
+          );
         } else if (!source && !isWindow(thisWindow)) {
-          postMessage = makeWorkerPostMessage(thisWindow);
+          logger('no source, or source is not window');
+          postMessage = makeWebWorkerPostMessage(
+            logger.child('makeWebWorkerPostMessage'),
+            thisWindow
+          );
         }
 
         if (postMessage === undefined) {
@@ -228,18 +208,15 @@ export function ChildHandshake<M0 extends MethodsType>(
 
         const { sessionId, requestId } = data;
 
-        runUntil(
-          () => {
-            const message = createResponsMessage(
-              sessionId,
-              requestId,
-              HANDSHAKE_SUCCESS
-            );
-            (postMessage as any)(message);
-          },
-          () => connected
+        const message = createResponsMessage(
+          sessionId,
+          requestId,
+          HANDSHAKE_SUCCESS
         );
+        logger('sending handshake message', { message });
+        postMessage(message);
 
+        logger('finalizing Connection');
         resolve(
           new ConcreteConnection(
             localMethods,

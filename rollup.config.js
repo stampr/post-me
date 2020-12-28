@@ -2,6 +2,7 @@ import typescript from 'rollup-plugin-typescript2';
 
 export default {
   input: 'src/index.ts',
+  sourcemap: 'inline',
   output: [
     {
       name: 'post-me',
@@ -13,5 +14,12 @@ export default {
       format: 'esm'
     }
   ],
-  plugins: [typescript()]
+  plugins: [typescript({ 
+    tsconfigOverride: {
+      compilerOptions: { 
+        sourceMap: true, 
+        inlineSourceMap: true,
+      },
+    },
+  })]
 }
