@@ -8,7 +8,6 @@ import {
   isResponseMessage,
   Message,
 } from './message';
-import { createLogger } from './logger';
 import {
   makeWindowPostMessage,
   makeWebWorkerAddMessageListener,
@@ -17,6 +16,9 @@ import {
   runUntil,
   isWindow,
 } from './handshake.utils';
+import debug from 'debug';
+
+const _logger = debug('postme:handshake');
 
 const uniqueSessionId: () => IdType = (() => {
   let __sessionId = 0;
@@ -35,7 +37,7 @@ export function ParentHandshake<M0 extends MethodsType>(
   acceptedOrigin: string,
   _thisWindow?: Window | DedicatedWorkerGlobalScope
 ): Promise<Connection> {
-  const logger = createLogger('PARENT');
+  const logger = _logger.bind(_logger, 'PARENT');
   logger('starting', {
     localMethods,
     otherWindow,
@@ -56,14 +58,14 @@ export function ParentHandshake<M0 extends MethodsType>(
     if (isWindow(otherWindow)) {
       logger('postMessage; otherWindow = Window');
       postMessage = makeWindowPostMessage(
-        logger.child('makeWindowPostMessage'),
+        logger.bind(logger, 'makeWindowPostMessage'),
         otherWindow,
         acceptedOrigin
       );
     } else {
       logger('postMessage; otherWindow = unknown (web worker?)');
       postMessage = makeWebWorkerPostMessage(
-        logger.child('makeWebWorkerPostMessage'),
+        logger.bind(logger, 'makeWebWorkerPostMessage'),
         otherWindow
       );
     }
@@ -80,7 +82,7 @@ export function ParentHandshake<M0 extends MethodsType>(
     if (isWindow(thisWindow) && !isWindow(otherWindow)) {
       logger('addMessageListener; web worker listener');
       addMessageListener = makeWebWorkerAddMessageListener(
-        logger.child('makeWebWorkerAddMessageListener'),
+        logger.bind(logger, 'makeWebWorkerAddMessageListener'),
         otherWindow
       );
     }
@@ -127,7 +129,7 @@ export function ParentHandshake<M0 extends MethodsType>(
     removeHandshakeListener = addMessageListener(handshakeListener);
 
     runUntil(
-      logger.child('runUntil'),
+      logger.bind(logger, 'runUntil'),
       () => {
         const message = createHandshakeMessage(thisSessionId);
         (postMessage as any)(message);
@@ -142,7 +144,7 @@ export function ChildHandshake<M0 extends MethodsType>(
   acceptedOrigin: string,
   _thisWindow?: Window | DedicatedWorkerGlobalScope
 ): Promise<Connection> {
-  const logger = createLogger('CHILD');
+  const logger = _logger.bind(_logger, 'CHILD');
   logger('starting', { localMethods, acceptedOrigin, _thisWindow });
   const thisWindow = _thisWindow || window;
 
@@ -155,14 +157,14 @@ export function ChildHandshake<M0 extends MethodsType>(
     if (isWindow(thisWindow)) {
       logger('addMessageListener; thisWindow = Window');
       addMessageListener = makeWindowAddMessageListener(
-        logger.child('makeWindowAddMessageListener'),
+        logger.bind(logger, 'makeWindowAddMessageListener'),
         thisWindow,
         acceptedOrigin
       );
     } else {
       logger('addMessageListener; thisWindow = unknown (web worker?)');
       addMessageListener = makeWebWorkerAddMessageListener(
-        logger.child('makeWebWorkerAddMessageListener'),
+        logger.bind(logger, 'makeWebWorkerAddMessageListener'),
         thisWindow
       );
     }
@@ -187,14 +189,14 @@ export function ChildHandshake<M0 extends MethodsType>(
         if (source && isWindow(source)) {
           logger('source is window');
           postMessage = makeWindowPostMessage(
-            logger.child('makeWindowPostMessage'),
+            logger.bind(logger, 'makeWindowPostMessage'),
             source as any,
             acceptedOrigin
           );
         } else if (!source && !isWindow(thisWindow)) {
           logger('no source, or source is not window');
           postMessage = makeWebWorkerPostMessage(
-            logger.child('makeWebWorkerPostMessage'),
+            logger.bind(logger, 'makeWebWorkerPostMessage'),
             thisWindow
           );
         }

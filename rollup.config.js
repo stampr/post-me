@@ -14,12 +14,13 @@ export default {
       format: 'esm'
     }
   ],
-  plugins: [typescript({ 
-    tsconfigOverride: {
-      compilerOptions: { 
-        sourceMap: true, 
-        inlineSourceMap: true,
-      },
-    },
-  })]
+  // plugins: [typescript({ 
+  //   tsconfigOverride: {
+  //     compilerOptions: { 
+  //       sourceMap: true, 
+  //       inlineSourceMap: true,
+  //     },
+  //   },
+  // })]
+  plugins: [typescript()]
 }

@@ -1,4 +1,3 @@
-import { Logger } from './logger';
 import { Message } from './message';
 
 export interface ISupportedWindow {
@@ -24,11 +23,7 @@ export function isWindow(w: unknown): w is ISupportedWindow {
   // );
 }
 
-export function makeWindowPostMessage(
-  logger: Logger,
-  w: Window,
-  origin: string
-) {
+export function makeWindowPostMessage(logger: any, w: Window, origin: string) {
   return (message: Message<any>) => {
     logger('message received', { w, origin, message });
     w.postMessage(message, origin);
@@ -36,7 +31,7 @@ export function makeWindowPostMessage(
 }
 
 export function makeWebWorkerPostMessage(
-  logger: Logger,
+  logger: any,
   w: Worker | DedicatedWorkerGlobalScope
 ) {
   return (message: Message<any>) => {
@@ -46,7 +41,7 @@ export function makeWebWorkerPostMessage(
 }
 
 export function makeWindowAddMessageListener(
-  logger: Logger,
+  logger: any,
   w: Window,
   acceptedOrigin: string
 ) {
@@ -92,7 +87,7 @@ export function makeWindowAddMessageListener(
 }
 
 export function makeWebWorkerAddMessageListener(
-  logger: Logger,
+  logger: any,
   w: Worker | WorkerGlobalScope
 ) {
   const acceptEvent = (_event: MessageEvent) => {
@@ -124,7 +119,7 @@ export function makeWebWorkerAddMessageListener(
 }
 
 export function runUntil(
-  logger: Logger,
+  logger: any,
   worker: () => void,
   condition: () => boolean,
   attemptInterval = 50
